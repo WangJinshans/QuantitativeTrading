@@ -7,9 +7,11 @@ import (
 	"github.com/go-xorm/xorm"
 	"github.com/rs/zerolog/log"
 	"io/ioutil"
+	"math"
 	"net/http"
 	"quant_trade/model"
 	"regexp"
+	"strings"
 	"time"
 	"xorm.io/core"
 )
@@ -18,23 +20,24 @@ var client http.Client
 var engine *xorm.Engine
 
 func init() {
-	var err error
-	engine, err = xorm.NewEngine("mysql", "root:wangjinshan@tcp(127.0.0.1:3306)/trade?charset=utf8")
-	if err != nil {
-		log.Error().Msgf("connect to database error: %v", err)
-		return
-	}
-	err = engine.Sync2(new(model.StockInfo))
-	if err != nil {
-		log.Error().Msgf("sync2 table error: %v", err)
-	}
+	//var err error
+	//engine, err = xorm.NewEngine("mysql", "root:wangjinshan@tcp(127.0.0.1:3306)/trade?charset=utf8")
+	//if err != nil {
+	//	log.Error().Msgf("connect to database error: %v", err)
+	//	return
+	//}
+	//err = engine.Sync2(new(model.StockInfo))
+	//if err != nil {
+	//	log.Error().Msgf("sync2 table error: %v", err)
+	//}
 }
 
 func main() {
+
 	infoList := GetStockList()
 	log.Info().Msg("------------------------------------------------------------------------------------------------------------------")
 	FilterData(infoList)
-	// GetBkInfo()
+	//GetBkInfo()
 }
 
 var headers = map[string]string{
@@ -49,7 +52,7 @@ var headers = map[string]string{
 }
 
 func GetStockList() (stockList []*model.StockInfo) {
-	var page = 150
+	var page = 1
 	var total int
 	for {
 		time.Sleep(500 * time.Millisecond)
@@ -228,32 +231,32 @@ func FilterData(stockList []*model.StockInfo) {
 		return
 	}
 	for _, info := range stockList {
-		//if strings.Contains(info.StockName, "ST") {
-		//	continue
-		//}
-		//if info.ChangeRate < 5 || info.ChangeRate > 10 {
-		//	continue
-		//}
-		//if info.CurrentRate > 10.5 || info.HighestRate > 10.5 || math.Abs(info.LowestRate) > 10.5 {
-		//	// 筛出部分创业板的数据
-		//	continue
-		//}
-		//
-		//if info.CurrentPrice > 50 || info.CurrentPrice < 5 {
-		//	// 价格相对较高或低
-		//	continue
-		//}
-		//if info.CurrentRate < 3 || info.CurrentRate > 5 {
-		//	// 涨幅适中
-		//	continue
-		//}
+		if strings.Contains(info.StockName, "ST") {
+			continue
+		}
+		if info.ChangeRate < 5 || info.ChangeRate > 10 {
+			continue
+		}
+		if info.CurrentRate > 10.5 || info.HighestRate > 10.5 || math.Abs(info.LowestRate) > 10.5 {
+			// 筛出部分创业板的数据
+			continue
+		}
+
+		if info.CurrentPrice > 50 || info.CurrentPrice < 5 {
+			// 价格相对较高或低
+			continue
+		}
+		if info.CurrentRate < 3 || info.CurrentRate > 5 {
+			// 涨幅适中
+			continue
+		}
 		diff := info.CurrentRate - info.HighestRate
 		log.Info().Msg("-----------------------------------------------------------------")
 		log.Info().Msgf("name is: %s, code is: %v, currentPrice is: %v", info.StockName, info.StockId, info.CurrentPrice)
 		log.Info().Msgf("highestPrice is: %v, lowestPrice is: %v", info.HighestPrice, info.LowestPrice)
 		log.Info().Msgf("rate is: %v, amplitude is: %v, diff is: %v", info.CurrentRate, info.Amplitude, diff)
 		log.Info().Msgf("changeRate is: %v, highestRate is: %v, lowestRate is: %v", info.ChangeRate, info.HighestRate, info.LowestRate)
-		SaveData(info)
+		//SaveData(info)
 	}
 }
 
@@ -271,7 +274,6 @@ func FilterHistoryData(stockList []*model.StockInfo) {
 
 // 存储到mysql中
 func SaveData(stockInfo *model.StockInfo) {
-	log.Info().Msgf("info is: %v", stockInfo)
 	engine.ShowSQL(true) // 显示SQL的执行, 便于调试分析
 	engine.SetTableMapper(core.SnakeMapper{})
 	affected, err := engine.Insert(stockInfo)
