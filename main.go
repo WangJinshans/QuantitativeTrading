@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	_ "github.com/go-sql-driver/mysql"
@@ -32,11 +33,130 @@ func init() {
 	//}
 }
 
-func main() {
+func Split808(segment []byte) (messages [][]byte, residueBytes []byte, invalidMessages [][]byte) {
+	//segment := []byte{0x77, 0x01, 0x7e, 0x02, 0x7e, 0x02, 0x02, 0x03, 0x05, 0x06, 0x07, 0x7e, 0x02, 0x7e, 0x02, 0x02, 0x7e, 0x02,0x7e, 0x02, 0x03, 0x05}
+	//segment := []byte{0x77, 0x01, 0x7e, 0x02, 0x7e, 0x02, 0x02, 0x03, 0x05, 0x06, 0x07}
+	old7e := []byte{0x7e, 0x02}
+	source7e := []byte{0x7e}
+	old7d := []byte{0x7e, 0x01}
+	source7d := []byte{0x7d}
+	rawPackages := bytes.Split(segment, old7e)
+	last := len(rawPackages)
+	for index, pkg := range rawPackages {
+		fmt.Printf("pkg is: %x\n", pkg)
+		if bytes.Equal(pkg, []byte("")) {
+			continue
+		}
+		data := bytes.Replace(pkg, old7e, source7e, -1)
+		data = bytes.Replace(pkg, old7d, source7d, -1)
+		if index == 0 {
+			fmt.Printf("invalid is: %x\n", data)
+			var rawData []byte
+			rawData = append(rawData, 0x7e, 0x02)
+			rawData = append(rawData, pkg...)
+			invalidMessages = append(invalidMessages, rawData)
+			continue
+		}
+		if index == last-1 {
+			fmt.Printf("residueBytes is: %x\n", data)
+			residueBytes = append(residueBytes, 0x7e, 0x02)
+			residueBytes = append(residueBytes, pkg...)
+			continue
+		}
+		messages = append(messages, data)
+		log.Info().Msgf("pkg is: %x", data)
+	}
+	return
+}
 
-	infoList := GetStockList()
-	log.Info().Msg("------------------------------------------------------------------------------------------------------------------")
-	FilterData(infoList)
+func Split808Fix(segment []byte) (messages [][]byte, residueBytes []byte, invalidMessages [][]byte) {
+	startFlag := []byte{0x7e, 0x02}
+	var index int
+	var indexList []int
+
+	for i := 0; i < len(segment)-2; i++ {
+		sf := segment[i : i+2]
+		if bytes.Equal(sf, startFlag) {
+			indexList = append(indexList, index)
+			index += 2
+		}
+		segment = segment[1:]
+		index += 1
+	}
+
+	fmt.Printf("index list is: %v\n", indexList)
+	//messages, residueBytes, invalidMessages = SplitPackage(segment, indexList)
+	return
+}
+
+func SplitPackage(segment []byte, indexList []int) (messages [][]byte, residueBytes []byte, invalidMessages [][]byte) {
+	//segment := []byte{0x77, 0x01, 0x7e, 0x02, 0x7e, 0x02, 0x02, 0x03, 0x05, 0x06, 0x07, 0x7e, 0x02, 0x7e, 0x02, 0x02, 0x7e, 0x02,0x7e, 0x02, 0x03, 0x05}
+	//segment := []byte{0x7e, 0x02, 0x02, 0x03, 0x7e, 0x02, 0x7e, 0x02, 0x02, 0x7e, 0x02,0x7e, 0x02, 0x03, 0x05}
+	old7e := []byte{0x7e, 0x02}
+	source7e := []byte{0x7e}
+	old7d := []byte{0x7e, 0x01}
+	source7d := []byte{0x7d}
+	var entireList []int
+	if len(indexList)%2 != 0 {
+		// 有剩余
+		left := indexList[len(indexList)-1]
+		entireList = indexList[:len(indexList)-1]
+		residueBytes = append(residueBytes, segment[left:]...)
+	} else {
+		// 包完整
+		entireList = indexList
+	}
+
+	for index := 0; index < len(entireList)-1; index++ {
+		if index == 0 {
+			// 前面的数据写入无效数据buffer
+			data := segment[:entireList[index]]
+			invalidMessages = append(invalidMessages, data)
+		}
+		if index%2 == 0 {
+			// 起始 -- 结束 中间数据为完整数据包
+			data := segment[entireList[index]:entireList[index+1]]
+			pkg := bytes.Replace(data, old7e, source7e, -1)
+			data = bytes.Replace(data, old7d, source7d, -1)
+			messages = append(messages, pkg)
+		} else {
+			// 结束 -- 起始  中间的数据写入无效buffer
+			data := segment[entireList[index]+2 : entireList[index+1]]
+			if data != nil {
+				invalidMessages = append(invalidMessages, data)
+			}
+		}
+	}
+	return
+}
+
+func main() {
+	//segment := []byte{0x77, 0x01, 0x7e, 0x02, 0x7e, 0x02, 0x02, 0x03, 0x05, 0x06, 0x07, 0x7e, 0x02, 0x7e, 0x02, 0x02, 0x7e, 0x02, 0x7e, 0x02, 0x03, 0x05}
+	segment := []byte{0x7e, 0x02, 0x02, 0x03, 0x05, 0x06, 0x07, 0x7e, 0x02}
+	segment = []byte{0x7e, 0x02, 0x02, 0x03, 0x05, 0x06, 0x07, 0x7e, 0x02, 0x7e, 0x02, 0x02, 0x7e, 0x02}
+	segment = []byte{0x7e, 0x02, 0x02, 0x03, 0x05, 0x06, 0x07, 0x7e, 0x02, 0x7e, 0x02, 0x02, 0x7e, 0x02, 0x7e, 0x02, 0x03, 0x05}
+	segment = []byte{0x7e, 0x02, 0x02, 0x03, 0x05, 0x06, 0x07, 0x7e, 0x02, 0x77, 0x7e, 0x02, 0x02, 0x7e, 0x02}
+	//segment = []byte{0x7e, 0x02, 0x02, 0x03, 0x05, 0x06, 0x07, 0x7e, 0x02, 0x77, 0x7e, 0x02, 0x02, 0x7e, 0x02, 0x77}
+
+	//segment := []byte{0x77, 0x01, 0x7e, 0x02,   0x7e, 0x02, 0x02, 0x03, 0x05, 0x06, 0x07}
+	//messages, residueBytes, invalidMessages := Split808(segment)
+	messages, residueBytes, invalidMessages := Split808Fix(segment)
+	fmt.Printf("message is: %x\n", messages)
+	fmt.Printf("residueBytes is: %x\n", residueBytes)
+	fmt.Printf("invalidMessages is: %x\n", invalidMessages)
+	fmt.Println("-------------------------------------------------------------------------------------------------")
+	//segment = []byte{0x77, 0x01, 0x7e, 0x02, 0x7e, 0x02, 0x02, 0x03, 0x05, 0x06, 0x07}
+	//if residueBytes != nil {
+	//	segment = append(residueBytes, segment...)
+	//}
+	//messages, residueBytes, invalidMessages = Split808(segment)
+	//fmt.Printf("message is: %x\n", messages)
+	//fmt.Printf("residueBytes is: %x\n", residueBytes)
+	//fmt.Printf("invalidMessages is: %x\n", invalidMessages)
+
+	//infoList := GetStockList()
+	//log.Info().Msg("------------------------------------------------------------------------------------------------------------------")
+	//FilterData(infoList)
 	//GetBkInfo()
 }
 
