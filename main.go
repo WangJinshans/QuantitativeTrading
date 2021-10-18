@@ -71,21 +71,16 @@ func Split808(segment []byte) (messages [][]byte, residueBytes []byte, invalidMe
 
 func Split808Fix(segment []byte) (messages [][]byte, residueBytes []byte, invalidMessages [][]byte) {
 	startFlag := []byte{0x7e, 0x02}
-	var index int
 	var indexList []int
 
-	for i := 0; i < len(segment)-2; i++ {
-		sf := segment[i : i+2]
+	for index := 0; index < len(segment)-1; index++ {
+		sf := segment[index : index+2]
 		if bytes.Equal(sf, startFlag) {
 			indexList = append(indexList, index)
-			index += 2
 		}
-		segment = segment[1:]
-		index += 1
 	}
 
-	fmt.Printf("index list is: %v\n", indexList)
-	//messages, residueBytes, invalidMessages = SplitPackage(segment, indexList)
+	messages, residueBytes, invalidMessages = SplitPackage(segment, indexList)
 	return
 }
 
