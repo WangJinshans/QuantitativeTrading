@@ -1,14 +1,12 @@
 package main
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/go-xorm/xorm"
 	"github.com/rs/zerolog/log"
 	"io/ioutil"
-	"math"
 	"net/http"
 	"quant_trade/model"
 	"regexp"
@@ -19,6 +17,17 @@ import (
 
 var client http.Client
 var engine *xorm.Engine
+
+var headers = map[string]string{
+	"Accept":           "*/*",
+	"Accept-Language":  "zh-CN,zh;q=0.9",
+	"Cache-Control":    "no-cache",
+	"Host":             "push2.eastmoney.com",
+	"Pragma":           "no-cache",
+	"Proxy-Connection": "keep-alive",
+	"Referer":          "http://data.eastmoney.com/",
+	"User-Agent":       "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/94.0.4606.71 Safari/537.36",
+}
 
 func init() {
 	//var err error
@@ -33,166 +42,13 @@ func init() {
 	//}
 }
 
-func Split808(segment []byte) (messages [][]byte, residueBytes []byte, invalidMessages [][]byte) {
-	//segment := []byte{0x77, 0x01, 0x7e, 0x02, 0x7e, 0x02, 0x02, 0x03, 0x05, 0x06, 0x07, 0x7e, 0x02, 0x7e, 0x02, 0x02, 0x7e, 0x02,0x7e, 0x02, 0x03, 0x05}
-	//segment := []byte{0x77, 0x01, 0x7e, 0x02, 0x7e, 0x02, 0x02, 0x03, 0x05, 0x06, 0x07}
-	old7e := []byte{0x7e, 0x02}
-	source7e := []byte{0x7e}
-	old7d := []byte{0x7e, 0x01}
-	source7d := []byte{0x7d}
-	rawPackages := bytes.Split(segment, old7e)
-	last := len(rawPackages)
-	for index, pkg := range rawPackages {
-		fmt.Printf("pkg is: %x\n", pkg)
-		if bytes.Equal(pkg, []byte("")) {
-			continue
-		}
-		data := bytes.Replace(pkg, old7e, source7e, -1)
-		data = bytes.Replace(pkg, old7d, source7d, -1)
-		if index == 0 {
-			fmt.Printf("invalid is: %x\n", data)
-			var rawData []byte
-			rawData = append(rawData, 0x7e, 0x02)
-			rawData = append(rawData, pkg...)
-			invalidMessages = append(invalidMessages, rawData)
-			continue
-		}
-		if index == last-1 {
-			fmt.Printf("residueBytes is: %x\n", data)
-			residueBytes = append(residueBytes, 0x7e, 0x02)
-			residueBytes = append(residueBytes, pkg...)
-			continue
-		}
-		messages = append(messages, data)
-		log.Info().Msgf("pkg is: %x", data)
-	}
-	return
-}
-
-func Split808Fix(segment []byte) (messages [][]byte, residueBytes []byte, invalidMessages [][]byte) {
-	startFlag := []byte{0x7e, 0x02}
-	var indexList []int
-
-	for index := 0; index < len(segment)-1; index++ {
-		sf := segment[index : index+2]
-		if bytes.Equal(sf, startFlag) {
-			indexList = append(indexList, index)
-		}
-	}
-	messages, residueBytes, invalidMessages = SplitPackage(segment, indexList)
-	return
-}
-
-func SplitPackage(segment []byte, indexList []int) (messages [][]byte, residueBytes []byte, invalidMessages [][]byte) {
-	old7e := []byte{0x7e, 0x02}
-	source7e := []byte{0x7e}
-	old7d := []byte{0x7e, 0x01}
-	source7d := []byte{0x7d}
-	var entireList []int
-
-	if len(indexList) == 0 {
-		residueBytes = append(residueBytes, segment...)
-		return
-	}
-
-	if len(indexList)%2 != 0 {
-		// 有剩余
-		entireList = indexList[:len(indexList)-1]
-		left := indexList[len(indexList)-1]
-		residueBytes = append(residueBytes, segment[left:]...) // 尾
-	} else {
-		// 包完整
-		entireList = indexList
-		left := indexList[len(indexList)-1]
-		left += 2
-		if left == len(segment) { // 末尾为0x7e 0x02
-			residueBytes = append(residueBytes, segment[left:]...) // 尾
-		} else {
-			// 中间存在0x7e 0x02, 剩下的数据为异常数据
-			invalidMessages = append(invalidMessages, segment[left:])
-		}
-	}
-	data := segment[:indexList[0]]
-	invalidMessages = append(invalidMessages, data) // 头
-
-	for index := 0; index < len(entireList)-1; index++ {
-		if index%2 == 0 {
-			// 起始 -- 结束 中间数据为完整数据包
-			data := segment[entireList[index] : entireList[index+1]+1]
-			log.Info().Msgf("data is: %x", data)
-			pkg := bytes.Replace(data, old7e, source7e, -1)
-			data = bytes.Replace(data, old7d, source7d, -1)
-			messages = append(messages, pkg)
-		} else {
-			// 结束 -- 起始  中间的数据写入无效buffer
-			data := segment[entireList[index]+2 : entireList[index+1]]
-			if data != nil {
-				invalidMessages = append(invalidMessages, data)
-			}
-		}
-	}
-	return
-}
-
-func main() {
-	segment := []byte{0x7e, 0x02}
-	//segment = []byte{0x02, 0x03, 0x05, 0x06, 0x07}
-	//segment = []byte{0x02, 0x03, 0x05, 0x06, 0x7e, 0x02}
-	//segment = []byte{0x7e, 0x02, 0x02, 0x03, 0x05, 0x06, 0x07}
-	//segment := []byte{0x7e, 0x02, 0x02, 0x03, 0x05, 0x06, 0x07, 0x7e, 0x02}
-	//segment = []byte{0x7e, 0x02, 0x02, 0x03, 0x05, 0x06, 0x07, 0x7e, 0x02, 0x7e, 0x02, 0x02, 0x7e, 0x02}
-	//segment = []byte{0x7e, 0x02, 0x02, 0x03, 0x05, 0x06, 0x07, 0x7e, 0x02, 0x7e, 0x02, 0x02, 0x7e, 0x02, 0x7e, 0x02, 0x03, 0x05}
-	//segment = []byte{0x7e, 0x02, 0x02, 0x03, 0x05, 0x06, 0x07, 0x7e, 0x02, 0x77, 0x7e, 0x02, 0x02, 0x7e, 0x02, 0x7e, 0x02, 0x03, 0x05}
-	//segment = []byte{0x7e, 0x02, 0x02, 0x03, 0x05, 0x06, 0x07, 0x7e, 0x02, 0x77, 0x7e, 0x02, 0x02, 0x7e, 0x02}
-	//segment = []byte{0x7e, 0x02, 0x02, 0x03, 0x05, 0x06, 0x07, 0x7e, 0x02, 0x77, 0x7e, 0x02, 0x02, 0x7e, 0x02, 0x77}
-
-	//segment = []byte{0xff, 0xff, 0x7e, 0x02, 0x02, 0x03, 0x05, 0x06, 0x07, 0x7e, 0x02, 0x77, 0x7e, 0x02, 0x02, 0x7e, 0x02, 0x77}
-	//segment = []byte{0xff, 0xff, 0x7e, 0x02, 0x02, 0x03, 0x05, 0x06, 0x07, 0x7e, 0x02, 0x77, 0x7e, 0x02, 0x7e, 0x02, 0x77}
-	//segment = []byte{0x7e, 0x03, 0x05, 0x06, 0x07, 0x7e, 0x02, 0x77}
-	//segment = []byte{0x7e, 0x03, 0x05, 0x06, 0x07, 0x7e, 0x02, 0x77, 0x7e, 0x02}
-	//segment = []byte{0x7e, 0x02, 0x03, 0x05, 0x06, 0x07, 0x7e, 0x02, 0x77}
-	//segment = []byte{0x7e, 0x03, 0x05, 0x06, 0x07, 0x7e, 0x02, 0x77, 0x7e, 0x02, 0x77}
-
-	//segment := []byte{0x77, 0x01, 0x7e, 0x02,   0x7e, 0x02, 0x02, 0x03, 0x05, 0x06, 0x07}
-	//messages, residueBytes, invalidMessages := Split808(segment)
-	messages, residueBytes, invalidMessages := Split808Fix(segment)
-	fmt.Printf("message is: %x\n", messages)
-	fmt.Printf("residueBytes is: %x\n", residueBytes)
-	fmt.Printf("invalidMessages is: %x\n", invalidMessages)
-	fmt.Println("-------------------------------------------------------------------------------------------------")
-	//segment = []byte{0x77, 0x01, 0x7e, 0x02, 0x7e, 0x02, 0x02, 0x03, 0x05, 0x06, 0x07}
-	//if residueBytes != nil {
-	//	segment = append(residueBytes, segment...)
-	//}
-	//messages, residueBytes, invalidMessages = Split808(segment)
-	//fmt.Printf("message is: %x\n", messages)
-	//fmt.Printf("residueBytes is: %x\n", residueBytes)
-	//fmt.Printf("invalidMessages is: %x\n", invalidMessages)
-
-	//infoList := GetStockList()
-	//log.Info().Msg("------------------------------------------------------------------------------------------------------------------")
-	//FilterData(infoList)
-	//GetBkInfo()
-}
-
-var headers = map[string]string{
-	"Accept":           "*/*",
-	"Accept-Language":  "zh-CN,zh;q=0.9",
-	"Cache-Control":    "no-cache",
-	"Host":             "push2.eastmoney.com",
-	"Pragma":           "no-cache",
-	"Proxy-Connection": "keep-alive",
-	"Referer":          "http://data.eastmoney.com/",
-	"User-Agent":       "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/94.0.4606.71 Safari/537.36",
-}
-
 func GetStockList() (stockList []*model.StockInfo) {
 	var page = 1
 	var total int
 	for {
 		time.Sleep(500 * time.Millisecond)
 
-		webUrl := fmt.Sprintf("http://51.push2.eastmoney.com/api/qt/clist/get?cb=jQuery1124012243073358859502_1634284246158&pn=%d&pz=30&po=1&np=1&ut=bd1d9ddb04089700cf9c27f6f7426281&fltt=2&invt=2&fid=f3&fs=m:0+t:6,m:0+t:80,m:1+t:2,m:1+t:23&fields=f1,f2,f3,f4,f5,f6,f7,f8,f9,f10,f12,f13,f14,f15,f16,f17,f18,f20,f21,f23,f24,f25,f22,f11,f62,f128,f136,f115,f152", page)
+		webUrl := fmt.Sprintf("http://51.push2.eastmoney.com/api/qt/clist/get?cb=jQuery1124012243073358859502_1634284246158&pn=%d&pz=30&po=1&np=1&ut=bd1d9ddb04089700cf9c27f6f7426281&fltt=2&invt=2&fid=f3&fs=m:0+t:6,m:0+t:80,m:1+t:2,m:1+t:23&fields=f1,f2,f3,f4,f5,f6,f7,f8,f9,f10,f12,f13,f14,f15,f16,f17,f18,f20,f21,f23,f24,f25,f22,f11,f57,f62,f128,f136,f115,f152", page)
 		req, err := http.NewRequest(http.MethodGet, webUrl, nil)
 		if err != nil {
 			log.Error().Msgf("create req error: %v", err)
@@ -242,8 +98,12 @@ func GetStockList() (stockList []*model.StockInfo) {
 		for _, v := range diffData {
 			log.Info().Msgf("v is: %v", v)
 			info := v.(map[string]interface{})
-			code, ok := info["f12"]
+			codeStr, ok := info["f12"]
 			if !ok {
+				continue
+			}
+			code := codeStr.(string)
+			if strings.HasPrefix(code, "300") || strings.HasPrefix(code, "688") {
 				continue
 			}
 			name, ok := info["f14"].(string)
@@ -359,8 +219,13 @@ func GetBkInfo() {
 	}
 }
 
+func getStockDetailInfo(stockId string) {
+
+}
+
 func FilterData(stockList []*model.StockInfo) {
 
+	var codeList []string
 	log.Info().Msgf("len is: %d", len(stockList))
 	if len(stockList) <= 0 {
 		return
@@ -372,16 +237,12 @@ func FilterData(stockList []*model.StockInfo) {
 		if info.ChangeRate < 5 || info.ChangeRate > 10 {
 			continue
 		}
-		if info.CurrentRate > 10.5 || info.HighestRate > 10.5 || math.Abs(info.LowestRate) > 10.5 {
-			// 筛出部分创业板的数据
-			continue
-		}
 
 		if info.CurrentPrice > 50 || info.CurrentPrice < 5 {
 			// 价格相对较高或低
 			continue
 		}
-		if info.CurrentRate < 3 || info.CurrentRate > 5 {
+		if info.CurrentRate < 2 || info.CurrentRate > 5 {
 			// 涨幅适中
 			continue
 		}
@@ -392,6 +253,7 @@ func FilterData(stockList []*model.StockInfo) {
 		log.Info().Msgf("rate is: %v, amplitude is: %v, diff is: %v", info.CurrentRate, info.Amplitude, diff)
 		log.Info().Msgf("changeRate is: %v, highestRate is: %v, lowestRate is: %v", info.ChangeRate, info.HighestRate, info.LowestRate)
 		//SaveData(info)
+		codeList = append(codeList, info.StockId)
 	}
 }
 
@@ -417,4 +279,12 @@ func SaveData(stockInfo *model.StockInfo) {
 		return
 	}
 	log.Info().Msgf("affected is: %v", affected)
+}
+
+func main() {
+
+	infoList := GetStockList()
+	log.Info().Msg("------------------------------------------------------------------------------------------------------------------")
+	FilterData(infoList)
+	//GetBkInfo()
 }
