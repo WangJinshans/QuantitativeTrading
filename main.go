@@ -1,16 +1,21 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/go-xorm/xorm"
+	"github.com/robfig/cron"
 	"github.com/rs/zerolog/log"
 	"io/ioutil"
 	"net/http"
+	"os"
+	"os/signal"
 	"quant_trade/model"
 	"regexp"
 	"strings"
+	"syscall"
 	"time"
 	"xorm.io/core"
 )
@@ -172,6 +177,16 @@ func GetStockList() (stockList []*model.StockInfo) {
 	return
 }
 
+func WatchStock(ctx context.Context) {
+	c := cron.New() //精确到秒
+
+	spec := "00 30 11 * * ? " //cron表达式 每天11:30
+	c.AddFunc(spec, func() {
+		fmt.Println("11111")
+	})
+	c.Start()
+}
+
 func GetBkInfo() {
 	webUrl := "http://push2.eastmoney.com/api/qt/clist/get?cb=jQuery1123022593397568009088_1634282352811&pn=1&pz=500&po=1&np=1&fields=f12%2Cf13%2Cf14%2Cf62&fid=f62&fs=m%3A90%2Bt%3A2"
 	req, err := http.NewRequest(http.MethodGet, webUrl, nil)
@@ -283,8 +298,15 @@ func SaveData(stockInfo *model.StockInfo) {
 
 func main() {
 
-	infoList := GetStockList()
-	log.Info().Msg("------------------------------------------------------------------------------------------------------------------")
-	FilterData(infoList)
+	signChan := make(chan os.Signal)
+	signal.Notify(signChan, syscall.SIGINT, syscall.SIGTERM)
+
+	ctx := context.Background()
+	//infoList := GetStockList()
+	//log.Info().Msg("------------------------------------------------------------------------------------------------------------------")
+	//FilterData(infoList)
+	go WatchStock(ctx)
 	//GetBkInfo()
+
+	<-signChan
 }
