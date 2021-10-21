@@ -29,7 +29,9 @@ var headers = map[string]string{
 }
 
 func GetBkInfo() {
-	webUrl := "http://push2.eastmoney.com/api/qt/clist/get?cb=jQuery1123022593397568009088_1634282352811&pn=1&pz=500&po=1&np=1&fields=f12%2Cf13%2Cf14%2Cf62&fid=f62&fs=m%3A90%2Bt%3A2"
+	ts := time.Now().Unix()
+	callBack := fmt.Sprintf("jQuery1123022593397568009088_%d", ts)
+	webUrl := "http://98.push2.eastmoney.com/api/qt/clist/get?cb=" + callBack + "&pn=1&pz=20&po=1&np=1&ut=bd1d9ddb04089700cf9c27f6f7426281&fltt=2&invt=2&fid=f3&fs=m:90+t:2+f:!50&fields=f1,f2,f3,f4,f5,f6,f7,f8,f9,f10,f12,f13,f14,f15,f16,f17,f18,f20,f21,f23,f24,f25,f26,f22,f33,f11,f62,f128,f136,f115,f152,f124,f107,f104,f105,f140,f141,f207,f208,f209,f222"
 	req, err := http.NewRequest(http.MethodGet, webUrl, nil)
 	if err != nil {
 		log.Error().Msgf("create req error: %v", err)
@@ -51,11 +53,10 @@ func GetBkInfo() {
 		log.Error().Msgf("get response error: %v", err)
 		return
 	}
-	fmt.Printf("content is: %v\n", string(content))
 
-	reg := regexp.MustCompile("jQuery1123022593397568009088_1634282352811\\(([\\s\\S]+?)\\);")
+	//reg := regexp.MustCompile("jQuery112405597814244474324_1634826682821\\(([\\s\\S]+?)\\);")
+	reg := regexp.MustCompile(callBack + "\\(([\\s\\S]+?)\\);")
 	rs := reg.FindAllSubmatch(content, -1)
-	//fmt.Printf("rs is: %s\n", string(rs[0][1]))
 	dataMap := make(map[string]interface{})
 	err = json.Unmarshal(rs[0][1], &dataMap)
 	if err != nil {
@@ -69,10 +70,98 @@ func GetBkInfo() {
 	}
 	data := diffItem.(map[string]interface{})
 	diffData := data["diff"].([]interface{})
-	//log.Info().Msgf("data map is: %v", dataMap)
-	for _, v := range diffData {
-		log.Info().Msgf("v is: %v", v)
+
+	//for _, item := range diffData {
+	//	bkId := item.(map[string]interface{})["f12"].(string)
+	//	log.Info().Msgf("v is: %v", item)
+	//	GetBkStockInfo(bkId)
+	//}
+
+	// 板块前5
+	var stockList []*model.SimpleStockInfo
+	var bkList []string
+	for index := 0; index < len(diffData); index++ {
+		item := diffData[index]
+		bkId := item.(map[string]interface{})["f12"].(string)
+		bkName := item.(map[string]interface{})["f14"].(string)
+		lst := GetBkStockInfo(bkId)
+		if len(lst) > 0 {
+			stockList = append(stockList, lst...)
+		}
+		bkList = append(bkList, bkName)
 	}
+
+	log.Info().Msg("===================================================================================================")
+	for _, item := range bkList {
+		log.Info().Msgf("bk name is: %s", item)
+	}
+
+	//log.Info().Msg("===================================================================================================")
+	//for _, item := range stockList {
+	//	log.Info().Msgf("currentPrice is: %.2f, stock Id is: %s, name is: %s, rate is: %.2f", item.CurrentPrice, item.StockId, item.StockName, item.Rate)
+	//}
+}
+
+// 获取板块个股的信息
+func GetBkStockInfo(bkId string) (stockList []*model.SimpleStockInfo) {
+	webUrl := "http://push2.eastmoney.com/api/qt/clist/get?cb=jQuery112308642520074849604_1634823017240&fid=f62&po=1&pz=50&pn=1&np=1&fltt=2&invt=2&fs=b%3A" + bkId + "&fields=f12%2Cf14%2Cf2%2Cf3%2Cf62%2Cf184%2Cf66%2Cf69%2Cf72%2Cf75%2Cf78%2Cf81%2Cf84%2Cf87%2Cf204%2Cf205%2Cf124%2Cf1%2Cf13"
+	req, err := http.NewRequest(http.MethodGet, webUrl, nil)
+	if err != nil {
+		log.Error().Msgf("create req error: %v", err)
+		return
+	}
+	for k, v := range headers {
+		req.Header.Add(k, v)
+	}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		log.Error().Msgf("failed to request: %v", err)
+		return
+	}
+	defer resp.Body.Close()
+
+	content, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		log.Error().Msgf("get response error: %v", err)
+		return
+	}
+
+	reg := regexp.MustCompile("jQuery112308642520074849604_1634823017240\\(([\\s\\S]+?)\\);")
+	rs := reg.FindAllSubmatch(content, -1)
+	dataMap := make(map[string]interface{})
+
+	err = json.Unmarshal(rs[0][1], &dataMap)
+	if err != nil {
+		log.Error().Msgf("unmarshal error: %v", err)
+		return
+	}
+	diffItem, ok := dataMap["data"]
+	if !ok {
+		log.Error().Msg("empty recode...")
+		return
+	}
+	data := diffItem.(map[string]interface{})
+	diffData := data["diff"].([]interface{})
+
+	for _, item := range diffData {
+		source := item.(map[string]interface{})
+		currentPrice, _ := source["f2"].(float64)
+		rate, _ := source["f3"].(float64)
+		stockId, _ := source["f12"].(string)
+		name, _ := source["f14"].(string)
+
+		stock := &model.SimpleStockInfo{
+			StockName:    name,
+			StockId:      stockId,
+			Rate:         rate,
+			CurrentPrice: currentPrice,
+		}
+		if rate > 0 && rate < 3 {
+			stockList = append(stockList, stock)
+		}
+	}
+	return
 }
 
 func GetStockMinuteInfo(stock *model.StockInfo) {

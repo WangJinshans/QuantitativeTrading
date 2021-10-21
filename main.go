@@ -4,12 +4,9 @@ import (
 	"context"
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/robfig/cron"
-	"os"
-	"os/signal"
 	"quant_trade/data_center"
 	"quant_trade/db"
 	"quant_trade/model"
-	"syscall"
 	"time"
 )
 
@@ -142,19 +139,19 @@ func main() {
 	//infoList := GetStockList()
 	//log.Info().Msg("------------------------------------------------------------------------------------------------------------------")
 	//FilterStock(infoList)
-	//GetBkInfo()
+	data_center.GetBkInfo()
 
-	signChan := make(chan os.Signal)
-	signal.Notify(signChan, syscall.SIGINT, syscall.SIGTERM)
+	//signChan := make(chan os.Signal)
+	//signal.Notify(signChan, syscall.SIGINT, syscall.SIGTERM)
+	//
+	////ctx := context.Background()
+	////go WatchStock(ctx)
+	//stock := &model.StockInfo{
+	//	StockId:        "301086",
+	//	StockMarket:    "0",
+	//	YesterdayPrice: 96.67,
+	//}
+	//data_center.GetStockMinuteInfo(stock)
 
-	//ctx := context.Background()
-	//go WatchStock(ctx)
-	stock := &model.StockInfo{
-		StockId:        "301086",
-		StockMarket:    "0",
-		YesterdayPrice: 96.67,
-	}
-	data_center.GetStockMinuteInfo(stock)
-
-	<-signChan
+	//<-signChan
 }

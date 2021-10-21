@@ -51,3 +51,10 @@ type StockInfo struct {
 	Amplitude      float64 // 振幅
 	Diff           float64 // 距离前高
 }
+
+type SimpleStockInfo struct {
+	StockName    string
+	StockId      string
+	Rate         float64
+	CurrentPrice float64
+}
