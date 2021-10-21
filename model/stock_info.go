@@ -53,6 +53,7 @@ type StockInfo struct {
 }
 
 type SimpleStockInfo struct {
+	StockMarket  string
 	StockName    string
 	StockId      string
 	Rate         float64

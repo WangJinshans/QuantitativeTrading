@@ -80,7 +80,7 @@ func GetBkInfo() {
 	// 板块前5
 	var stockList []*model.SimpleStockInfo
 	var bkList []string
-	for index := 0; index < len(diffData); index++ {
+	for index := 0; index < 5; index++ {
 		item := diffData[index]
 		bkId := item.(map[string]interface{})["f12"].(string)
 		bkName := item.(map[string]interface{})["f14"].(string)
@@ -96,10 +96,19 @@ func GetBkInfo() {
 		log.Info().Msgf("bk name is: %s", item)
 	}
 
-	//log.Info().Msg("===================================================================================================")
-	//for _, item := range stockList {
-	//	log.Info().Msgf("currentPrice is: %.2f, stock Id is: %s, name is: %s, rate is: %.2f", item.CurrentPrice, item.StockId, item.StockName, item.Rate)
-	//}
+	log.Info().Msg("===================================================================================================")
+	for _, item := range stockList {
+		if strings.Contains(item.StockName, "ST") {
+			continue
+		}
+		s := &model.StockInfo{
+			StockId:     item.StockId,
+			StockName:   item.StockName,
+			StockMarket: item.StockMarket,
+		}
+		GetStockMinuteInfo(s)
+		log.Info().Msgf("currentPrice is: %.2f, stock Id is: %s, name is: %s, rate is: %.2f", item.CurrentPrice, item.StockId, item.StockName, item.Rate)
+	}
 }
 
 // 获取板块个股的信息
@@ -149,9 +158,11 @@ func GetBkStockInfo(bkId string) (stockList []*model.SimpleStockInfo) {
 		currentPrice, _ := source["f2"].(float64)
 		rate, _ := source["f3"].(float64)
 		stockId, _ := source["f12"].(string)
+		stockMarket := fmt.Sprintf("%.f", source["f13"].(float64))
 		name, _ := source["f14"].(string)
 
 		stock := &model.SimpleStockInfo{
+			StockMarket:  stockMarket,
 			StockName:    name,
 			StockId:      stockId,
 			Rate:         rate,
@@ -166,6 +177,7 @@ func GetBkStockInfo(bkId string) (stockList []*model.SimpleStockInfo) {
 
 func GetStockMinuteInfo(stock *model.StockInfo) {
 	secId := fmt.Sprintf("%s.%s", stock.StockMarket, stock.StockId)
+	log.Info().Msgf("secId is: %s", secId)
 	webUrl := fmt.Sprintf("http://push2.eastmoney.com/api/qt/stock/trends2/get?fields1=f1,f2,f3,f4,f5,f6,f7,f8,f9,f10,f11,f12,f13&fields2=f51,f52,f53,f54,f55,f56,f57,f58&ndays=1&iscr=0&secid=%s&cb=jQuery112405294932494445095_1634734830512", secId)
 	req, err := http.NewRequest(http.MethodGet, webUrl, nil)
 	if err != nil {
@@ -188,11 +200,10 @@ func GetStockMinuteInfo(stock *model.StockInfo) {
 		log.Error().Msgf("get response error: %v", err)
 		return
 	}
-	fmt.Printf("content is: %v\n", string(content))
 
 	reg := regexp.MustCompile("jQuery112405294932494445095_1634734830512\\(([\\s\\S]+?)\\);")
 	rs := reg.FindAllSubmatch(content, -1)
-	//fmt.Printf("rs is: %s\n", string(rs[0][1]))
+
 	dataMap := make(map[string]interface{})
 	err = json.Unmarshal(rs[0][1], &dataMap)
 	if err != nil {
