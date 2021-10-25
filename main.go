@@ -250,6 +250,7 @@ func Split(segment []byte) (messages [][]byte, residueBytes []byte, invalidMessa
 					// 不完整的一个包
 					if nextFlag == len(indexList) {
 						// 最后一个写入剩余
+						// 存在0~2之间有问题 但是1~2之间没有问题的情况
 						residueBytes = append(residueBytes, seg...)
 						log.Info().Msgf("residueBytes error: %x", residueBytes)
 					}
