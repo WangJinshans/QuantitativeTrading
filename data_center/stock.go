@@ -96,19 +96,19 @@ func GetBkInfo() {
 		log.Info().Msgf("bk name is: %s", item)
 	}
 
-	log.Info().Msg("===================================================================================================")
-	for _, item := range stockList {
-		if strings.Contains(item.StockName, "ST") {
-			continue
-		}
-		s := &model.StockInfo{
-			StockId:     item.StockId,
-			StockName:   item.StockName,
-			StockMarket: item.StockMarket,
-		}
-		GetStockMinuteInfo(s)
-		log.Info().Msgf("currentPrice is: %.2f, stock Id is: %s, name is: %s, rate is: %.2f", item.CurrentPrice, item.StockId, item.StockName, item.Rate)
-	}
+	//log.Info().Msg("===================================================================================================")
+	//for _, item := range stockList {
+	//	if strings.Contains(item.StockName, "ST") {
+	//		continue
+	//	}
+	//	s := &model.StockInfo{
+	//		StockId:     item.StockId,
+	//		StockName:   item.StockName,
+	//		StockMarket: item.StockMarket,
+	//	}
+	//	GetStockMinuteInfo(s)
+	//	log.Info().Msgf("currentPrice is: %.2f, stock Id is: %s, name is: %s, rate is: %.2f", item.CurrentPrice, item.StockId, item.StockName, item.Rate)
+	//}
 }
 
 // 获取板块个股的信息
@@ -367,7 +367,7 @@ func FilterHistoryData(stockList []*model.StockInfo) {
 	//}
 }
 
-func SaveStockInfo(stockInfoList []interface{}) {
+func SaveStockInfo(stockInfoList []*model.StockInfo) {
 	if len(stockInfoList) <= 0 {
 		return
 	}
@@ -378,8 +378,9 @@ func SaveStockInfo(stockInfoList []interface{}) {
 }
 
 func GetStockList() (stockList []*model.StockInfo) {
-	var page = 1
+	var page = 140
 	var total int
+	timeString := time.Now().Format("2006-01-01")
 	for {
 		time.Sleep(500 * time.Millisecond)
 
@@ -443,7 +444,7 @@ func GetStockList() (stockList []*model.StockInfo) {
 			if !ok {
 				continue
 			}
-			market := marketStr.(string)
+			market, _ := marketStr.(string)
 			if strings.HasPrefix(code, "300") || strings.HasPrefix(code, "688") {
 				continue
 			}
@@ -486,6 +487,7 @@ func GetStockList() (stockList []*model.StockInfo) {
 			highestRate := ((highestPrice - yesterdayPrice) / yesterdayPrice) * 100
 			lowestRate := ((lowestPrice - yesterdayPrice) / yesterdayPrice) * 100
 			diff := rate - highestRate
+			log.Info().Msgf("info is: %v", info)
 			log.Info().Msgf("code is: %v, currentPrice is: %v", code, currentPrice)
 			log.Info().Msgf("highestPrice is: %v, lowestPrice is: %v, startPrice is: %v", highestPrice, lowestPrice, startPrice)
 			log.Info().Msgf("rate is: %v, amplitude is: %v, diff is: %v", rate, amplitude, diff)
@@ -495,6 +497,7 @@ func GetStockList() (stockList []*model.StockInfo) {
 				StockId:      fmt.Sprintf("%s", code),
 				StockName:    name,
 				StockMarket:  market,
+				TimeString:   timeString,
 				CurrentPrice: currentPrice,
 				HighestPrice: highestPrice,
 				LowestPrice:  lowestPrice,
@@ -511,4 +514,8 @@ func GetStockList() (stockList []*model.StockInfo) {
 		page += 1
 	}
 	return
+}
+
+func getReverseStock() {
+
 }

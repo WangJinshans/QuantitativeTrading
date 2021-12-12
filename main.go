@@ -141,9 +141,10 @@ func WatchSingleStock(stock *model.StockInfo) {
 
 func main() {
 
-	//infoList := GetStockList()
-	//log.Info().Msg("------------------------------------------------------------------------------------------------------------------")
-	//FilterStock(infoList)
+	//data_center.GetStockList()
+	infoList := data_center.GetStockList()
+	log.Info().Msg("------------------------------------------------------------------------------------------------------------------")
+	data_center.SaveStockInfo(infoList)
 
 	//data_center.GetBkInfo()
 
