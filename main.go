@@ -4,14 +4,20 @@ import (
 	"bytes"
 	"context"
 	"encoding/binary"
+	"encoding/csv"
 	"encoding/hex"
 	"errors"
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/robfig/cron"
 	"github.com/rs/zerolog/log"
+	"io"
+	"os"
+	"path/filepath"
 	"quant_trade/data_center"
 	"quant_trade/db"
 	"quant_trade/model"
+	"strconv"
+	"strings"
 	"time"
 )
 
@@ -141,10 +147,43 @@ func WatchSingleStock(stock *model.StockInfo) {
 
 func main() {
 
-	//data_center.GetStockList()
-	infoList := data_center.GetStockList()
-	log.Info().Msg("------------------------------------------------------------------------------------------------------------------")
-	data_center.SaveStockInfo(infoList)
+	//fileList, err := GetFileList("D:\\Stock\\20211210\\2021-12-10")
+	//if err != nil {
+	//	log.Info().Msgf("read csv file error: %v", err)
+	//	return
+	//}
+	//for _, filePath := range fileList {
+	//	log.Info().Msgf("file path is: %s", filePath)
+	//	ReadCsv(filePath)
+	//}
+
+	ReadCsv("")
+
+	//GetChangeInfoWithCondition()
+	//stockChangeMapInfo := data_center.GetChanges()
+	//
+	//for stockId, changeInfo := range stockChangeMapInfo {
+	//	info := model.StockChange{
+	//		StockId:                stockId,
+	//		StockName:              changeInfo["stockName"].(string),
+	//		BigMaiPan:              changeInfo["type64"].(int),
+	//		RocketLaunch:           changeInfo["type8201"].(int),
+	//		QuantityBuy:            changeInfo["type8193"].(int),
+	//		BigMaiPanChangeTime:    changeInfo["type64_time"].(string),
+	//		RocketLaunchChangeTime: changeInfo["type8201_time"].(string),
+	//		QuantityBuyChangeTime:  changeInfo["type8193_time"].(string),
+	//		TimeString:             time.Now().Format("2006-01-02"),
+	//	}
+	//	db.SaveChangeInfo(info)
+	//}
+
+	//infoList := data_center.GetStockList()
+	//log.Info().Msg("------------------------------------------------------------------------------------------------------------------")
+	////lst := data_center.FilterStock(infoList)
+	////for _, item := range lst {
+	////	log.Info().Msgf("item name is: %s, rate is: %f", item.StockName, item.CurrentRate)
+	////}
+	//db.SaveStock(infoList)
 
 	//data_center.GetBkInfo()
 
@@ -162,14 +201,116 @@ func main() {
 
 	//<-signChan
 
-	messages, residueBytes, invalidMessages := Split([]byte(""))
-	for _, item := range messages {
-		log.Info().Msgf("message is: %x", item)
-	}
-	log.Info().Msgf("len message is: %x", len(messages))
-	log.Info().Msgf("residueBytes is: %x", residueBytes)
-	log.Info().Msgf("invalidMessages is: %x", invalidMessages)
+	//messages, residueBytes, invalidMessages := Split([]byte(""))
+	//for _, item := range messages {
+	//	log.Info().Msgf("message is: %x", item)
+	//}
+	//log.Info().Msgf("len message is: %x", len(messages))
+	//log.Info().Msgf("residueBytes is: %x", residueBytes)
+	//log.Info().Msgf("invalidMessages is: %x", invalidMessages)
 
+}
+
+func GetChangeInfoWithCondition() {
+	stockList, err := db.GetChangeInfo()
+	if err != nil {
+		log.Info().Msgf("no data found...")
+		return
+	}
+
+	for _, item := range stockList {
+		var stockInfo model.StockInfo
+		stockInfo.StockId = item.StockId
+		stockInfo.TimeString = item.TimeString
+		count := item.QuantityBuy + item.BigMaiPan + item.RocketLaunch
+		if count < 7 {
+			continue
+		}
+		info, err := db.GetStockInfo(stockInfo)
+		if err != nil {
+			log.Info().Msgf("can not find stock, error: %v", err)
+			return
+		}
+		if info.CurrentRate < 8 && info.CurrentRate > 2 {
+			//if info.HighestRate > 9 {
+			//	continue
+			//}
+			log.Info().Msgf("stockId is: %s, stockName is: %s, count is: %d", info.StockId, info.StockName, count)
+		}
+		//if info.CurrentRate < 7 && info.CurrentRate > 2 {
+		//	log.Info().Msgf("stockId is: %s, stockName is: %s, count is: %d", item.StockId, item.StockName, item.QuantityBuy+item.BigMaiPan+item.RocketLaunch)
+		//}
+	}
+}
+
+func GetFileList(dir string) ([]string, error) {
+	var files []string
+	//方法一
+	var walkFunc = func(path string, info os.FileInfo, err error) error {
+		if !info.IsDir() {
+			files = append(files, path)
+		}
+		return nil
+	}
+	err := filepath.Walk(dir, walkFunc)
+	return files, err
+}
+
+func ReadCsv(filePath string) {
+	//t := time.Now().Format("2006-01-02")
+	t := "2021-12-13"
+	//准备读取文件
+	filePath = "D:\\Stock\\20211213\\2021-12-13\\600596.csv"
+	// 002864  000408  600935
+	fileName := filepath.Base(filePath)
+	stockId := strings.Split(fileName, ".")[0]
+	log.Info().Msgf("stockId is: %s", stockId)
+	fs, err := os.Open(filePath)
+	if err != nil {
+		log.Info().Msgf("can not open the file, err is %+v", err)
+	}
+	defer fs.Close()
+	r := csv.NewReader(fs)
+	var flag bool
+	//针对大文件，一行一行的读取文件
+	var dataList []model.Level2TradeInfo
+	for {
+		row, err := r.Read()
+		if err != nil && err != io.EOF {
+			log.Info().Msgf("can not read, err is %+v", err)
+		}
+		if err == io.EOF {
+			break
+		}
+		if !flag {
+			flag = true
+			continue
+		}
+		var info model.Level2TradeInfo
+		saleVolume, _ := strconv.ParseInt(row[4], 10, 64)
+		buyVolume, _ := strconv.ParseInt(row[5], 10, 64)
+		saleVolume = saleVolume / 100
+		buyVolume = buyVolume / 100
+		saleOrderID := row[7]
+		buyOrderID := row[9]
+		tradeId := row[0]
+		tradeTime := row[1]
+		info.BuyOrderID = buyOrderID
+		info.BuyOrderVolume = buyVolume
+		info.SaleOrderID = saleOrderID
+		info.SaleOrderVolume = saleVolume
+		info.TradeId = tradeId
+		info.StockId = stockId
+		info.TradeDay = t
+		info.TradeTime = tradeTime
+
+		dataList = append(dataList, info)
+		if len(dataList) > 1000 {
+			db.SaveLevel2TradeInfo(dataList)
+			dataList = nil
+		}
+		//log.Info().Msgf("SaleOrderVolume is: %d, BuyOrderVolume is: %d, SaleOrderID is: %s, BuyOrderID is: %s", saleVolume, buyVolume, row[7], row[9])
+	}
 }
 
 func Split(segment []byte) (messages [][]byte, residueBytes []byte, invalidMessages [][]byte) {

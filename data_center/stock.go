@@ -28,6 +28,116 @@ var headers = map[string]string{
 	"User-Agent":       "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/94.0.4606.71 Safari/537.36",
 }
 
+func GetChanges() (stockChangeMapInfo map[string]map[string]interface{}) {
+	stockChangeMapInfo = make(map[string]map[string]interface{})
+	var pageIndex int = 0
+
+	for {
+		webUrl := fmt.Sprintf("http://push2ex.eastmoney.com/getAllStockChanges?type=8201,8193,64&cb=jQuery112401745104453711004_1639316373215&pageindex=%d&pagesize=64&ut=7eea3edcaed734bea9cbfc24409ed989&dpt=wzchanges", pageIndex)
+		req, err := http.NewRequest(http.MethodGet, webUrl, nil)
+		if err != nil {
+			log.Error().Msgf("create req error: %v", err)
+			return
+		}
+		for k, v := range headers {
+			req.Header.Add(k, v)
+		}
+
+		resp, err := client.Do(req)
+		if err != nil {
+			log.Error().Msgf("failed to request: %v", err)
+			return
+		}
+
+		content, err := ioutil.ReadAll(resp.Body)
+		if err != nil {
+			log.Error().Msgf("get response error: %v", err)
+			resp.Body.Close()
+			return
+		}
+		resp.Body.Close()
+
+		reg := regexp.MustCompile("jQuery112401745104453711004_1639316373215\\(([\\s\\S]+?)\\);")
+		rs := reg.FindAllSubmatch(content, -1)
+		dataMap := make(map[string]interface{})
+		err = json.Unmarshal(rs[0][1], &dataMap)
+		if err != nil {
+			log.Error().Msgf("unmarshal error: %v", err)
+			return
+		}
+		data := dataMap["data"]
+		allStock := data.(map[string]interface{})["allstock"]
+
+		stockList := allStock.([]interface{})
+
+		for _, info := range stockList {
+
+			item := info.(map[string]interface{})
+			stockName := item["n"].(string)
+			if strings.Contains(stockName, "ST") {
+				continue
+			}
+			var changeTime string
+			t := int(item["tm"].(float64))
+			if t/100000 > 0 {
+				changeTime = fmt.Sprintf("%d", t)
+			} else {
+				changeTime = fmt.Sprintf("0%d", t)
+			}
+			stockId := item["c"].(string)
+			if strings.Contains(stockId, "30") || strings.Contains(stockId, "68") {
+				continue
+			}
+			changeType := fmt.Sprintf("%d", int(item["t"].(float64)))
+			_, ok := stockChangeMapInfo[stockId]
+			if ok {
+				changeTime = "    " + changeTime
+				if changeType == "64" {
+					stockChangeMapInfo[stockId]["type64"] = stockChangeMapInfo[stockId]["type64"].(int) + 1
+					stockChangeMapInfo[stockId]["type64_time"] = changeTime
+				} else if changeType == "8201" {
+					stockChangeMapInfo[stockId]["type8201"] = stockChangeMapInfo[stockId]["type8201"].(int) + 1
+					stockChangeMapInfo[stockId]["type8201_time"] = changeTime
+				} else if changeType == "8193" {
+					stockChangeMapInfo[stockId]["type8193"] = stockChangeMapInfo[stockId]["type8193"].(int) + 1
+					stockChangeMapInfo[stockId]["type8193_time"] = changeTime
+				}
+			} else {
+				mapInfo := make(map[string]interface{})
+				if changeType == "64" {
+					mapInfo["type64"] = 1
+					mapInfo["type64_time"] = changeTime
+					mapInfo["type8201"] = 0
+					mapInfo["type8201_time"] = ""
+					mapInfo["type8193"] = 0
+					mapInfo["type8193_time"] = ""
+				} else if changeType == "8201" {
+					mapInfo["type64"] = 0
+					mapInfo["type64_time"] = ""
+					mapInfo["type8201"] = 1
+					mapInfo["type8201_time"] = changeTime
+					mapInfo["type8193"] = 0
+					mapInfo["type8193_time"] = ""
+				} else if changeType == "8193" {
+					mapInfo["type64"] = 0
+					mapInfo["type64_time"] = ""
+					mapInfo["type8201"] = 0
+					mapInfo["type8201_time"] = ""
+					mapInfo["type8193"] = 1
+					mapInfo["type8193_time"] = changeTime
+				}
+
+				mapInfo["stockName"] = stockName
+				stockChangeMapInfo[stockId] = mapInfo
+			}
+		}
+		if len(stockList) < 64 {
+			return
+		}
+		pageIndex += 1
+	}
+}
+
 func GetBkInfo() {
 	ts := time.Now().Unix()
 	callBack := fmt.Sprintf("jQuery1123022593397568009088_%d", ts)
@@ -344,6 +454,9 @@ func FilterStock(stockList []*model.StockInfo) (infoList []*model.StockInfo) {
 			// 涨幅适中
 			continue
 		}
+		if info.CurrentRate != 1.27 {
+			continue
+		}
 		diff := info.CurrentRate - info.HighestRate
 		log.Info().Msg("-----------------------------------------------------------------")
 		log.Info().Msgf("name is: %s, code is: %v, currentPrice is: %v", info.StockName, info.StockId, info.CurrentPrice)
@@ -378,9 +491,9 @@ func SaveStockInfo(stockInfoList []*model.StockInfo) {
 }
 
 func GetStockList() (stockList []*model.StockInfo) {
-	var page = 140
+	var page = 1
 	var total int
-	timeString := time.Now().Format("2006-01-01")
+	timeString := time.Now().Format("2006-01-02")
 	for {
 		time.Sleep(500 * time.Millisecond)
 
@@ -432,7 +545,7 @@ func GetStockList() (stockList []*model.StockInfo) {
 		}
 		diffData := d.([]interface{})
 		for _, v := range diffData {
-			log.Info().Msgf("v is: %v", v)
+			//log.Info().Msgf("v is: %v", v)
 			info := v.(map[string]interface{})
 			codeStr, ok := info["f12"]
 			if !ok {
@@ -445,9 +558,9 @@ func GetStockList() (stockList []*model.StockInfo) {
 				continue
 			}
 			market, _ := marketStr.(string)
-			if strings.HasPrefix(code, "300") || strings.HasPrefix(code, "688") {
-				continue
-			}
+			//if strings.HasPrefix(code, "300") || strings.HasPrefix(code, "688") {
+			//	continue
+			//}
 			name, ok := info["f14"].(string)
 			if !ok {
 				continue
@@ -464,10 +577,10 @@ func GetStockList() (stockList []*model.StockInfo) {
 			if !ok {
 				continue
 			}
-			startPrice, ok := info["f17"].(float64)
-			if !ok {
-				continue
-			}
+			//startPrice, ok := info["f17"].(float64)
+			//if !ok {
+			//	continue
+			//}
 			yesterdayPrice, ok := info["f18"].(float64)
 			if !ok {
 				continue
@@ -487,11 +600,11 @@ func GetStockList() (stockList []*model.StockInfo) {
 			highestRate := ((highestPrice - yesterdayPrice) / yesterdayPrice) * 100
 			lowestRate := ((lowestPrice - yesterdayPrice) / yesterdayPrice) * 100
 			diff := rate - highestRate
-			log.Info().Msgf("info is: %v", info)
-			log.Info().Msgf("code is: %v, currentPrice is: %v", code, currentPrice)
-			log.Info().Msgf("highestPrice is: %v, lowestPrice is: %v, startPrice is: %v", highestPrice, lowestPrice, startPrice)
-			log.Info().Msgf("rate is: %v, amplitude is: %v, diff is: %v", rate, amplitude, diff)
-			log.Info().Msgf("changeRate is: %v, highestRate is: %v, lowestRate is: %v", changeRate, highestRate, lowestRate)
+			//log.Info().Msgf("info is: %v", info)
+			//log.Info().Msgf("code is: %v, currentPrice is: %v", code, currentPrice)
+			//log.Info().Msgf("highestPrice is: %v, lowestPrice is: %v, startPrice is: %v", highestPrice, lowestPrice, startPrice)
+			//log.Info().Msgf("rate is: %v, amplitude is: %v, diff is: %v", rate, amplitude, diff)
+			//log.Info().Msgf("changeRate is: %v, highestRate is: %v, lowestRate is: %v", changeRate, highestRate, lowestRate)
 
 			stockInfo := &model.StockInfo{
 				StockId:      fmt.Sprintf("%s", code),

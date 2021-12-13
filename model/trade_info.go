@@ -7,5 +7,6 @@ type Level2TradeInfo struct {
 	SaleOrderVolume int64
 	BuyOrderVolume  int64
 	TradeTime       string
+	TradeDay        string
 	StockId         string
 }
