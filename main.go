@@ -145,45 +145,29 @@ func WatchSingleStock(stock *model.StockInfo) {
 	}
 }
 
-func main() {
+func GetTodayStockMoneyInfo() {
 
-	//fileList, err := GetFileList("D:\\Stock\\20211210\\2021-12-10")
-	//if err != nil {
-	//	log.Info().Msgf("read csv file error: %v", err)
-	//	return
-	//}
-	//for _, filePath := range fileList {
-	//	log.Info().Msgf("file path is: %s", filePath)
-	//	ReadCsv(filePath)
-	//}
+	infoList := data_center.GetStockList()
+	var stockMoneyInfoList []model.StockMoneyFlow
+	for _, stock := range infoList {
+		flowInfo := data_center.GetStockMoneyFlow(stock)
+		stockMoneyInfoList = append(stockMoneyInfoList, flowInfo)
+		if len(stockMoneyInfoList) > 500 {
+			db.SaveStockMoneyFlow(stockMoneyInfoList)
+			stockMoneyInfoList = nil
+		}
+	}
+	db.SaveStockMoneyFlow(stockMoneyInfoList)
+}
+
+func main() {
 
 	ReadCsv("")
 
 	//GetChangeInfoWithCondition()
-	//stockChangeMapInfo := data_center.GetChanges()
-	//
-	//for stockId, changeInfo := range stockChangeMapInfo {
-	//	info := model.StockChange{
-	//		StockId:                stockId,
-	//		StockName:              changeInfo["stockName"].(string),
-	//		BigMaiPan:              changeInfo["type64"].(int),
-	//		RocketLaunch:           changeInfo["type8201"].(int),
-	//		QuantityBuy:            changeInfo["type8193"].(int),
-	//		BigMaiPanChangeTime:    changeInfo["type64_time"].(string),
-	//		RocketLaunchChangeTime: changeInfo["type8201_time"].(string),
-	//		QuantityBuyChangeTime:  changeInfo["type8193_time"].(string),
-	//		TimeString:             time.Now().Format("2006-01-02"),
-	//	}
-	//	db.SaveChangeInfo(info)
-	//}
 
-	//infoList := data_center.GetStockList()
-	//log.Info().Msg("------------------------------------------------------------------------------------------------------------------")
-	////lst := data_center.FilterStock(infoList)
-	////for _, item := range lst {
-	////	log.Info().Msgf("item name is: %s, rate is: %f", item.StockName, item.CurrentRate)
-	////}
-	//db.SaveStock(infoList)
+	//GetTodayStockMoneyInfo()
+	//GetTodayStockInfo()
 
 	//data_center.GetBkInfo()
 
@@ -211,6 +195,31 @@ func main() {
 
 }
 
+func GetTodayStockInfo() {
+	infoList := data_center.GetStockList()
+	db.SaveStock(infoList)
+}
+
+func GetChangesInfo() {
+
+	stockChangeMapInfo := data_center.GetChanges()
+	for stockId, changeInfo := range stockChangeMapInfo {
+		info := model.StockChange{
+			StockId:                stockId,
+			StockName:              changeInfo["stockName"].(string),
+			BigMaiPan:              changeInfo["type64"].(int),
+			RocketLaunch:           changeInfo["type8201"].(int),
+			QuantityBuy:            changeInfo["type8193"].(int),
+			BigMaiPanChangeTime:    changeInfo["type64_time"].(string),
+			RocketLaunchChangeTime: changeInfo["type8201_time"].(string),
+			QuantityBuyChangeTime:  changeInfo["type8193_time"].(string),
+			//TimeString:             "2021-12-14",
+			TimeString: time.Now().Format("2006-01-02"),
+		}
+		db.SaveChangeInfo(info)
+	}
+}
+
 func GetChangeInfoWithCondition() {
 	stockList, err := db.GetChangeInfo()
 	if err != nil {
@@ -232,9 +241,9 @@ func GetChangeInfoWithCondition() {
 			return
 		}
 		if info.CurrentRate < 8 && info.CurrentRate > 2 {
-			//if info.HighestRate > 9 {
-			//	continue
-			//}
+			if info.HighestRate > 9 {
+				continue
+			}
 			log.Info().Msgf("stockId is: %s, stockName is: %s, count is: %d", info.StockId, info.StockName, count)
 		}
 		//if info.CurrentRate < 7 && info.CurrentRate > 2 {
@@ -258,9 +267,9 @@ func GetFileList(dir string) ([]string, error) {
 
 func ReadCsv(filePath string) {
 	//t := time.Now().Format("2006-01-02")
-	t := "2021-12-13"
+	t := "2021-12-17"
 	//准备读取文件
-	filePath = "D:\\Stock\\20211213\\2021-12-13\\600596.csv"
+	filePath = "D:\\Stock\\20211217\\2021-12-17\\600935.csv"
 	// 002864  000408  600935
 	fileName := filepath.Base(filePath)
 	stockId := strings.Split(fileName, ".")[0]

@@ -285,6 +285,79 @@ func GetBkStockInfo(bkId string) (stockList []*model.SimpleStockInfo) {
 	return
 }
 
+func GetStockMoneyFlow(stock *model.StockInfo) (info model.StockMoneyFlow) {
+	//var stock model.StockInfo
+	//stock.StockMarket = "0"
+	//stock.StockId = "002011"
+	secId := fmt.Sprintf("%s.%s", stock.StockMarket, stock.StockId)
+	log.Info().Msgf("secId is: %s", secId)
+	webUrl := fmt.Sprintf("https://push2.eastmoney.com/api/qt/ulist.np/get?cb=jQuery112309361835255384281_1639926485979&fltt=2&secids=%s&fields=f62,f184,f66,f69,f72,f75,f78,f81,f84,f87,f64,f65,f70,f71,f76,f77,f82,f83,f164,f166,f168,f170,f172,f252,f253,f254,f255,f256,f124,f6,f278,f279,f280,f281,f282&ut=b2884a393a59ad64002292a3e90d46a5", secId)
+	req, err := http.NewRequest(http.MethodGet, webUrl, nil)
+	if err != nil {
+		log.Error().Msgf("create req error: %v", err)
+		return
+	}
+	for k, v := range headers {
+		req.Header.Add(k, v)
+	}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		log.Error().Msgf("failed to request: %v", err)
+		return
+	}
+	defer resp.Body.Close()
+
+	content, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		log.Error().Msgf("get response error: %v", err)
+		return
+	}
+
+	reg := regexp.MustCompile("jQuery112309361835255384281_1639926485979\\(([\\s\\S]+?)\\);")
+	rs := reg.FindAllSubmatch(content, -1)
+
+	dataMap := make(map[string]interface{})
+	err = json.Unmarshal(rs[0][1], &dataMap)
+	if err != nil {
+		log.Error().Msgf("unmarshal error: %v", err)
+		return
+	}
+
+	data, ok := dataMap["data"]
+	if !ok {
+		log.Error().Msg("empty recode...")
+		return
+	}
+	if data == nil {
+		log.Error().Msgf("content is: %s", string(content))
+		return
+	}
+	diffItem := data.(map[string]interface{})["diff"]
+	flowInfo := diffItem.([]interface{})[0].(map[string]interface{})
+
+	//log.Info().Msgf("主力净流入：%d, 净比: %v", int(flowInfo["f62"].(float64)), flowInfo["f184"])
+	//log.Info().Msgf("超大单：%d, 净比: %v", int(flowInfo["f66"].(float64)), flowInfo["f69"])
+	//log.Info().Msgf("大单：%d, 净比: %v", int(flowInfo["f72"].(float64)), flowInfo["f75"])
+	//log.Info().Msgf("中单：%d, 净比: %v", int(flowInfo["f78"].(float64)), flowInfo["f81"])
+	//log.Info().Msgf("小单：%d, 净比: %v", int(flowInfo["f84"].(float64)), flowInfo["f87"])
+
+	info.StockId = stock.StockId
+	//info.TimeString = time.Now().Format("2006-01-02")
+	info.TimeString = "2021-12-17"
+	info.MainStream = int64(flowInfo["f62"].(float64))
+	info.MainStreamRate = flowInfo["f184"].(float64)
+	info.Super = int64(flowInfo["f66"].(float64))
+	info.SuperRate = flowInfo["f69"].(float64)
+	info.Big = int64(flowInfo["f72"].(float64))
+	info.BigRate = flowInfo["f75"].(float64)
+	info.Middle = int64(flowInfo["f78"].(float64))
+	info.MiddleRate = flowInfo["f81"].(float64)
+	info.Small = int64(flowInfo["f84"].(float64))
+	info.SmallRate = flowInfo["f87"].(float64)
+	return
+}
+
 func GetStockMinuteInfo(stock *model.StockInfo) {
 	secId := fmt.Sprintf("%s.%s", stock.StockMarket, stock.StockId)
 	log.Info().Msgf("secId is: %s", secId)
@@ -493,7 +566,9 @@ func SaveStockInfo(stockInfoList []*model.StockInfo) {
 func GetStockList() (stockList []*model.StockInfo) {
 	var page = 1
 	var total int
-	timeString := time.Now().Format("2006-01-02")
+	//timeString := time.Now().Format("2006-01-02")
+	timeString := "2021-12-17"
+
 	for {
 		time.Sleep(500 * time.Millisecond)
 
@@ -557,7 +632,7 @@ func GetStockList() (stockList []*model.StockInfo) {
 			if !ok {
 				continue
 			}
-			market, _ := marketStr.(string)
+			market := fmt.Sprintf("%.0f", marketStr.(float64))
 			//if strings.HasPrefix(code, "300") || strings.HasPrefix(code, "688") {
 			//	continue
 			//}

@@ -59,3 +59,18 @@ type SimpleStockInfo struct {
 	Rate         float64
 	CurrentPrice float64
 }
+
+type StockMoneyFlow struct {
+	StockId        string
+	MainStream     int64 // 主力
+	Super          int64
+	Big            int64
+	Middle         int64
+	Small          int64
+	MainStreamRate float64 // 主力
+	SuperRate      float64
+	BigRate        float64
+	MiddleRate     float64
+	SmallRate      float64
+	TimeString     string
+}
